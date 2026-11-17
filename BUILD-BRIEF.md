@@ -76,3 +76,18 @@ A 2D canvas top-down battle royale on a single island. 12 combatants (you + 11 A
 - Enemy wobble / any time-based motion must use the entity's accumulated time (seeded), NOT `performance.now()` (non-determinism).
 - Bundle is the parent's job; the builder's session is bundled with `--muse-usage` from muse.db.
 - The local repo and the remote can diverge in sha (put-file creates API commits) — the parent reconciles with `reset --hard origin/main` before submit; make sure the FILE CONTENT you push is final.
+
+## v2 — realistic features (added 2026-11-17, all free/procedural)
+User order: "tambahin fitur kaya container, mobil, sepeda motor, lapangan, pasir, efek suara perang, helikopter terbang". All 11 added, 0 cut:
+1. Containers (solid cover, 4 colour clusters, minimap squares) — map.js.
+2. Drivable cars (2, ~1.8x, driver 50% damage, 150 HP) — vehicles.js.
+3. Drivable motorcycles (2, ~2.2x, rider exposed, 80 HP) — vehicles.js.
+4. Fields + tall grass (hides fighters, bots lose sight >180px) — map.js.
+5. Sand (0.9x slow, footstep dust) — map.js + particles.js.
+6. War sounds (distant shots, explosions, rotor, footsteps, engine) — audio.js.
+7. Helicopters + supply drops (every ~45-60s, parachute crate, toast + minimap diamond) — heli.js.
+8. Muzzle flash + tracer + shell casings — weapons.js + particles.js + hud.js.
+9. Hit-stop (~40ms on kill) + hitmarker + floating damage numbers — bullets.js + hud.js + main.js.
+10. Damage falloff (full <150px, 50% at 400px+) + recoil bloom + camera kick — bullets.js + weapons.js.
+11. Drifting smoke (expands, wind drift, fades) — smoke.js.
+Verified: node --check all 21 .js files; kit check 13 passed / 0 failed (except transcripts_present = parent's step); headless playtest 0 console + 0 page errors; FPS 60.0 (avg 16.67ms, p95 16.7ms) x3 runs; mount/drive/dismount + heli drop + smoke drift verified live in the browser; all 4 screenshots re-taken seed=1 and viewed (containers, wreck, bike, gold SUPPLY crate all visible). One pre-existing HUD defect fixed in v2: the pickup toast panel (y 672-708) overlapped the KILLS/SMOKE/SCORE line (y 700) — the line now sits at y 664.
