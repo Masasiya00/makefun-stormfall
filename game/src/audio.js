@@ -6,6 +6,11 @@ let ctx = null;
 let master = null;
 let muted = false;
 let noiseBuffer = null;
+/** The vehicle engine loop: one persistent oscillator, started on mount, stopped
+ * on dismount or destruction. Its pitch follows the speed; the master gain mutes it. */
+let engineOsc = null;
+let engineGain = null;
+let engineFilter = null;
 
 function ensureContext() {
   if (ctx) return ctx;
@@ -38,6 +43,54 @@ export function setMuted(value) {
 }
 export function isMuted() {
   return muted;
+}
+
+/** Start the engine loop (called on mount). Silent until engine() sets its pitch. */
+export function engineStart() {
+  if (muted) return;
+  const c = ensureContext();
+  if (!c || !master || engineOsc) return;
+  try {
+    engineOsc = c.createOscillator();
+    engineOsc.type = 'sawtooth';
+    engineOsc.frequency.value = 55;
+    engineFilter = c.createBiquadFilter();
+    engineFilter.type = 'lowpass';
+    engineFilter.frequency.value = 320;
+    engineGain = c.createGain();
+    engineGain.gain.value = 0.045;
+    engineOsc.connect(engineFilter);
+    engineFilter.connect(engineGain);
+    engineGain.connect(master);
+    engineOsc.start();
+  } catch {
+    engineOsc = null;
+  }
+}
+
+/** Follow the speed (0..1) and boost: pitch and loudness rise with the throttle. */
+export function engine(speed01, boosting) {
+  if (muted || !engineOsc || !ctx) return;
+  try {
+    const target = 55 + speed01 * 75 + (boosting ? 30 : 0);
+    engineOsc.frequency.setTargetAtTime(target, ctx.currentTime, 0.08);
+    if (engineGain) engineGain.gain.setTargetAtTime(0.035 + speed01 * 0.035, ctx.currentTime, 0.1);
+  } catch {
+    // Audio is decoration; never let it break the game.
+  }
+}
+
+/** Stop the engine loop (dismount or destruction). */
+export function engineStop() {
+  if (!engineOsc) return;
+  try {
+    engineOsc.stop();
+  } catch {
+    // Already stopped.
+  }
+  engineOsc = null;
+  engineGain = null;
+  engineFilter = null;
 }
 
 function tone(freq, dur, type, vol, slideTo) {
@@ -99,6 +152,15 @@ const SHOOT_TONES = {
 };
 
 export const sfx = {
+  engineStart() {
+    engineStart();
+  },
+  engine(speed01, boosting) {
+    engine(speed01, boosting);
+  },
+  engineStop() {
+    engineStop();
+  },
   shoot(id) {
     (SHOOT_TONES[id] || SHOOT_TONES.pistol)();
   },
@@ -136,5 +198,34 @@ export const sfx = {
   },
   defeat() {
     [392, 330, 262, 196].forEach((f, i) => setTimeout(() => tone(f, 0.3, 'triangle', 0.16), i * 170));
+  },
+  /** A distant firefight: a muffled shot from far away, so the island sounds at war
+   * even when nobody is near. Quiet, low-passed, slightly random each time. */
+  distantShot() {
+    noise(0.22, 0.05, 420);
+    tone(90 + Math.random() * 40, 0.18, 'sawtooth', 0.04, 45);
+  },
+  /** A real explosion: a deep boom (low noise + a falling sub tone) for a destroyed
+   * vehicle or a landed supply drop. */
+  explosion() {
+    noise(0.7, 0.4, 320);
+    tone(90, 0.6, 'sawtooth', 0.3, 28);
+    tone(55, 0.8, 'sine', 0.28, 24);
+  },
+  /** One helicopter rotor whump, louder the closer the chopper is (0..1). */
+  rotor(close01) {
+    if (close01 <= 0.02) return;
+    noise(0.16, 0.03 + close01 * 0.12, 260);
+    tone(42, 0.16, 'sine', 0.03 + close01 * 0.09, 36);
+  },
+  /** A supply drop is coming: two rising notes, so the player looks up. */
+  supplyWarn() {
+    tone(440, 0.12, 'triangle', 0.14, 660);
+    setTimeout(() => tone(660, 0.14, 'triangle', 0.14, 880), 130);
+  },
+  /** A footstep: a soft filtered thud. Sand is drier and higher than grass. */
+  step(surface) {
+    if (surface === 'sand') noise(0.06, 0.05, 900, 'bandpass');
+    else noise(0.05, 0.04, 500);
   },
 };
