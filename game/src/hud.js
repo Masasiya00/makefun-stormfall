@@ -91,6 +91,11 @@ function drawLoot(ctx, state) {
       ctx.fillStyle = '#ffffff';
       ctx.font = '700 9px system-ui, sans-serif';
       ctx.textAlign = 'center';
+      // Dark outline so the label never bleeds into the grass or a fighter behind it.
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(def.name.toUpperCase(), 0, -14);
       ctx.fillText(def.name.toUpperCase(), 0, -14);
     } else if (item.kind === 'medkit') {
       ctx.fillStyle = '#ffffff';
@@ -163,6 +168,10 @@ function drawCrates(ctx, state) {
     ctx.fillStyle = '#ffd75e';
     ctx.font = '700 11px system-ui, sans-serif';
     ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText('LOOT', 0, -24);
     ctx.fillText('LOOT', 0, -24);
     ctx.restore();
   }
@@ -194,9 +203,12 @@ function bar(ctx, x, y, w, h, pct, color, bg) {
   ctx.fillRect(x, y, w * Math.max(0, Math.min(1, pct)), h);
 }
 
-function panel(ctx, x, y, w, h) {
+function panel(ctx, x, y, w, h, fill) {
   ctx.save();
-  ctx.fillStyle = PALETTE.panel;
+  // `fill` overrides the default translucent panel: the top HUD blocks pass a solid
+  // fill, because a translucent panel lets a bright map label or bot name ghost through
+  // from underneath and read as text-on-text.
+  ctx.fillStyle = fill || PALETTE.panel;
   ctx.strokeStyle = PALETTE.panelEdge;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -215,10 +227,15 @@ function centreText(ctx, text, x, y, font, color) {
   ctx.restore();
 }
 
-/** The HUD: health + shield + stamina, alive + zone timer, kill feed, weapons, minimap. */
+/** The HUD: health + shield + stamina, alive + zone timer, kill feed, weapons, minimap.
+ * Every top HUD block sits on its own dark panel: without one, a map label (a crate's
+ * LOOT, a zone name, a bot's name) drifting under the HUD reads as text-on-text. */
 export function drawHUD(ctx, state) {
   const p = state.player;
   const s = state.storm;
+  // Top-left panel behind health, shield, stamina (covers any crate LOOT label below it).
+  // Solid fill: a translucent panel lets a bright zone label ghost through from underneath.
+  panel(ctx, 12, 12, 244, 86, '#080d1a');
   // Top-left: health, shield, stamina.
   ctx.save();
   ctx.textAlign = 'left';
@@ -237,6 +254,10 @@ export function drawHUD(ctx, state) {
   ctx.fillText('SPRINT', 146, 87);
   ctx.restore();
 
+  // Top-centre panel behind alive count + zone timer + place name (covers any bot
+  // name drifting under the top band, e.g. a "Tess" under "ZONE SHRINKS IN 4s").
+  // Solid fill, for the same ghosting reason as the top-left panel.
+  panel(ctx, 460, 12, 360, 84, '#080d1a');
   // Top-centre: alive count + zone timer + the named place the player is standing in.
   const alive = state.alive;
   const timer = stormTimer(state);
@@ -256,7 +277,17 @@ export function drawHUD(ctx, state) {
   ctx.fillText('⌖  ' + (zone ? zone.name.toUpperCase() : 'OPEN GROUND'), 640, 84);
   ctx.restore();
 
-  // Top-right: kill feed (newest first).
+  // Top-right: kill feed (newest first), on its own panel so it never reads over a
+  // zone label (e.g. "Glass Field") sitting in the feed's column.
+  if (state.feed.length > 0) {
+    ctx.save();
+    ctx.font = '700 13px ' + FONT;
+    let w = 0;
+    for (const line of state.feed) w = Math.max(w, ctx.measureText(line.text).width);
+    const pw = Math.min(380, w + 24);
+    panel(ctx, 1260 - pw, 14, pw, state.feed.length * 20 + 12, '#080d1a');
+    ctx.restore();
+  }
   ctx.save();
   ctx.textAlign = 'right';
   ctx.font = '700 13px ' + FONT;
@@ -266,6 +297,30 @@ export function drawHUD(ctx, state) {
     ctx.fillText(line.text, 1260, 30 + i * 20);
   });
   ctx.restore();
+
+  // Weapon-pickup toast: a small panel just above the weapon slots, fading out.
+  // (The old floating "SCATTERGUN!" banner over the play area is gone by design.)
+  if (state.pickupToast) {
+    const pt = state.pickupToast;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, pt.t / pt.maxT));
+    ctx.font = '700 12px ' + FONT;
+    const prefix = 'PICKED UP  ';
+    const pw = Math.min(340, ctx.measureText(prefix + pt.text).width + 28);
+    ctx.fillStyle = '#080d1a';
+    ctx.strokeStyle = PALETTE.panelEdge;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(20, 656, pw, 26, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.fillStyle = PALETTE.muted;
+    ctx.fillText('PICKED UP', 32, 673);
+    ctx.fillStyle = PALETTE.gold;
+    ctx.fillText(pt.text, 32 + ctx.measureText(prefix).width, 673);
+    ctx.restore();
+  }
 
   // Bottom-left: weapon slots + ammo.
   const def = currentWeapon(p);
@@ -307,7 +362,9 @@ export function drawHUD(ctx, state) {
   drawMinimap(ctx, state);
 }
 
-/** Small map, bottom-right: island, storm, safe zone, player and bots. */
+/** Small map, bottom-right: island, storm, safe zone, player and bots. Kept readable:
+ * a lighter panel, a brighter island and a weaker storm tint — the old version went
+ * almost black-purple once the storm covered most of the map. */
 function drawMinimap(ctx, state) {
   const mw = 170;
   const mh = 128;
@@ -316,7 +373,7 @@ function drawMinimap(ctx, state) {
   const sx = mw / WORLD.width;
   const sy = mh / WORLD.height;
   ctx.save();
-  ctx.fillStyle = 'rgba(8, 13, 26, 0.8)';
+  ctx.fillStyle = 'rgba(16, 24, 40, 0.88)';
   ctx.strokeStyle = PALETTE.panelEdge;
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -326,28 +383,28 @@ function drawMinimap(ctx, state) {
   ctx.beginPath();
   ctx.rect(mx, my, mw, mh);
   ctx.clip();
-  // Island.
-  ctx.fillStyle = '#2f6b3a';
+  // Island (brighter than the old dark green, so it reads against the storm tint).
+  ctx.fillStyle = '#3f8f4a';
   ctx.beginPath();
   ctx.ellipse(mx + mw / 2, my + mh / 2, mw / 2 - 4, mh / 2 - 4, 0, 0, Math.PI * 2);
   ctx.fill();
-  // Storm tint outside the safe zone.
+  // Storm tint outside the safe zone (weaker than before: 0.35, not 0.55).
   const s = state.storm;
-  ctx.fillStyle = 'rgba(124, 58, 237, 0.55)';
+  ctx.fillStyle = 'rgba(124, 58, 237, 0.35)';
   ctx.beginPath();
   ctx.rect(mx, my, mw, mh);
   ctx.arc(mx + s.cx * sx, my + s.cy * sy, s.radius * sx, 0, Math.PI * 2, true);
   ctx.fill();
   ctx.strokeStyle = '#e9d5ff';
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(mx + s.cx * sx, my + s.cy * sy, s.radius * sx, 0, Math.PI * 2);
   ctx.stroke();
   // Named places as dots, so the minimap reads as a map of places, not a blank disc.
   for (const z of ZONES) {
-    ctx.fillStyle = 'rgba(233, 213, 255, 0.75)';
+    ctx.fillStyle = 'rgba(233, 213, 255, 0.9)';
     ctx.beginPath();
-    ctx.arc(mx + z.x * sx, my + z.y * sy, 2, 0, Math.PI * 2);
+    ctx.arc(mx + z.x * sx, my + z.y * sy, 2.5, 0, Math.PI * 2);
     ctx.fill();
   }
   // Bots as orange dots, player as a cyan dot with a ring.
@@ -355,19 +412,19 @@ function drawMinimap(ctx, state) {
     if (!b.alive) continue;
     ctx.fillStyle = '#ff9a3d';
     ctx.beginPath();
-    ctx.arc(mx + b.x * sx, my + b.y * sy, 2.5, 0, Math.PI * 2);
+    ctx.arc(mx + b.x * sx, my + b.y * sy, 3, 0, Math.PI * 2);
     ctx.fill();
   }
   const p = state.player;
   if (p.alive) {
     ctx.fillStyle = '#4de8ff';
     ctx.beginPath();
-    ctx.arc(mx + p.x * sx, my + p.y * sy, 4, 0, Math.PI * 2);
+    ctx.arc(mx + p.x * sx, my + p.y * sy, 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(mx + p.x * sx, my + p.y * sy, 6, 0, Math.PI * 2);
+    ctx.arc(mx + p.x * sx, my + p.y * sy, 7.5, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.restore();
