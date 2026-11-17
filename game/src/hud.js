@@ -2,13 +2,15 @@
 // (terrain, storm, loot, crates, fighters, bullets, particles), the HUD sits on top in
 // screen space, and the title / pause / victory / eliminated screens are panels over a
 // dimmed world. The camera follows the player; the world is bigger than the viewport.
-import { WORLD, VIEW, PLAYER, WEAPONS, STORM_PHASES } from './config.js';
+import { WORLD, VIEW, PLAYER, WEAPONS, STORM_PHASES, VEHICLES } from './config.js';
 import { PALETTE, FONT, FONT_MONO } from './palette.js';
 import { drawPlayer, drawFighterBody } from './player.js';
 import { drawBots } from './bots.js';
 import { drawParticles } from './particles.js';
 import { drawSmoke } from './smoke.js';
-import { zoneAt, ZONES } from './map.js';
+import { drawVehicles } from './vehicles.js';
+import { drawHeli } from './heli.js';
+import { zoneAt, ZONES, drawTallGrass } from './map.js';
 import { stormTimer } from './storm.js';
 import { currentWeapon, currentWeaponId } from './weapons.js';
 
@@ -23,11 +25,41 @@ export function drawWorld(ctx, state) {
   drawStorm(ctx, state);
   drawLoot(ctx, state);
   drawCrates(ctx, state);
+  drawVehicles(ctx, state);
   drawBots(ctx, state);
   drawPlayer(ctx, state);
   drawSmoke(ctx, state);
+  // Tall grass over the fighters: a fighter in a field is half-covered (the hiding).
+  drawTallGrass(ctx, state.island);
+  // Helicopters and falling supply crates fly above everything.
+  drawHeli(ctx, state);
   drawBullets(ctx, state);
   drawParticles(ctx, state);
+  drawHitmark(ctx, state);
+}
+
+/** The crosshair hitmarker: a white X at the point the player's shot landed. */
+function drawHitmark(ctx, state) {
+  const m = state.hitmark;
+  if (!m) return;
+  const a = Math.max(0, m.t / m.maxT);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  const s = 9;
+  ctx.beginPath();
+  ctx.moveTo(m.x - s, m.y - s);
+  ctx.lineTo(m.x - 3, m.y - 3);
+  ctx.moveTo(m.x + s, m.y - s);
+  ctx.lineTo(m.x + 3, m.y - 3);
+  ctx.moveTo(m.x - s, m.y + s);
+  ctx.lineTo(m.x - 3, m.y + 3);
+  ctx.moveTo(m.x + s, m.y + s);
+  ctx.lineTo(m.x + 3, m.y + 3);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /** The storm: a purple tint outside the safe circle, with a bright animated edge. */
@@ -153,9 +185,12 @@ function drawCrates(ctx, state) {
     if (!crate.alive) continue;
     ctx.save();
     ctx.translate(crate.x, crate.y);
-    ctx.fillStyle = PALETTE.crateEdge;
+    // A supply crate (helicopter drop) is gold, not brown — it is worth fighting for.
+    const edge = crate.supply ? '#92400e' : PALETTE.crateEdge;
+    const face = crate.supply ? '#f59e0b' : PALETTE.crate;
+    ctx.fillStyle = edge;
     ctx.fillRect(-20, -20, 40, 40);
-    ctx.fillStyle = PALETTE.crate;
+    ctx.fillStyle = face;
     ctx.fillRect(-17, -17, 34, 34);
     ctx.strokeStyle = '#78350f';
     ctx.lineWidth = 3;
@@ -171,8 +206,8 @@ function drawCrates(ctx, state) {
     ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(0,0,0,0.75)';
-    ctx.strokeText('LOOT', 0, -24);
-    ctx.fillText('LOOT', 0, -24);
+    ctx.strokeText(crate.supply ? 'SUPPLY' : 'LOOT', 0, -24);
+    ctx.fillText(crate.supply ? 'SUPPLY' : 'LOOT', 0, -24);
     ctx.restore();
   }
 }
@@ -182,6 +217,15 @@ function drawBullets(ctx, state) {
   ctx.globalCompositeOperation = 'lighter';
   for (const b of state.bullets) {
     if (!b.alive) continue;
+    // Tracer: a bright line from where the bullet was to where it is — the round
+    // in flight, not just a glowing dot.
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = b.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(b.px, b.py);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = b.color;
     ctx.beginPath();
@@ -298,6 +342,27 @@ export function drawHUD(ctx, state) {
   });
   ctx.restore();
 
+  // Supply-drop toast: a small panel under the health block (free space on the
+  // left edge, clear of every other HUD element). Fades on its own.
+  if (state.supplyToast) {
+    const st = state.supplyToast;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, st.t / st.maxT));
+    ctx.font = '800 13px ' + FONT;
+    const tw = Math.min(320, ctx.measureText(st.text).width + 32);
+    ctx.fillStyle = '#080d1a';
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(12, 106, tw, 30, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillText('⬇  ' + st.text, 24, 126);
+    ctx.restore();
+  }
+
   // Weapon-pickup toast: a small panel just above the weapon slots, fading out.
   // (The old floating "SCATTERGUN!" banner over the play area is gone by design.)
   if (state.pickupToast) {
@@ -356,8 +421,27 @@ export function drawHUD(ctx, state) {
   }
   ctx.font = '700 12px ' + FONT;
   ctx.fillStyle = PALETTE.muted;
-  ctx.fillText('KILLS  ' + state.kills + '   ·   SMOKE  ×' + p.smoke + '   ·   SCORE  ' + (state.kills * 100), 20, 700);
+  ctx.fillText('KILLS  ' + state.kills + '   ·   SMOKE  ×' + p.smoke + '   ·   SCORE  ' + (state.kills * 100), 20, 664);
   ctx.restore();
+
+  // Vehicle panel (bottom-centre, its own opaque panel): type, speed, vehicle HP,
+  // and the exit key. Only while mounted — on foot this space stays empty.
+  if (p.vehicle && p.vehicle.alive) {
+    const v = p.vehicle;
+    const def = VEHICLES[v.kind];
+    const kmh = Math.round(Math.abs(v.speed) * 0.12);
+    ctx.save();
+    panel(ctx, 520, 716, 240, 56, '#080d1a');
+    ctx.textAlign = 'left';
+    ctx.font = '800 14px ' + FONT;
+    ctx.fillStyle = PALETTE.text;
+    ctx.fillText(def.name.toUpperCase() + '  ·  ' + kmh + ' KM/H', 534, 736);
+    bar(ctx, 534, 744, 150, 8, v.hp / v.maxHp, v.hp > v.maxHp * 0.4 ? '#4ade80' : '#ef4444');
+    ctx.font = '700 11px ' + FONT;
+    ctx.fillStyle = PALETTE.muted;
+    ctx.fillText('E — EXIT', 692, 752);
+    ctx.restore();
+  }
 
   drawMinimap(ctx, state);
 }
@@ -406,6 +490,51 @@ function drawMinimap(ctx, state) {
     ctx.beginPath();
     ctx.arc(mx + z.x * sx, my + z.y * sy, 2.5, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // Containers as grey squares (cover you can read at a glance).
+  for (const o of state.island.obstacles) {
+    if (o.kind !== 'container' && o.kind !== 'wreck') continue;
+    ctx.fillStyle = o.kind === 'wreck' ? '#3f3f46' : '#9ca3af';
+    ctx.fillRect(mx + o.x * sx - 2, my + o.y * sy - 2, 4, 4);
+  }
+  // Vehicles as white squares; a falling or landed supply drop as a gold diamond.
+  for (const v of state.vehicles) {
+    if (!v.alive) continue;
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(mx + v.x * sx - 2.5, my + v.y * sy - 2.5, 5, 5);
+  }
+  for (const d of state.drops) {
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.moveTo(mx + d.x * sx, my + d.y * sy - 5);
+    ctx.lineTo(mx + d.x * sx + 5, my + d.y * sy);
+    ctx.lineTo(mx + d.x * sx, my + d.y * sy + 5);
+    ctx.lineTo(mx + d.x * sx - 5, my + d.y * sy);
+    ctx.closePath();
+    ctx.fill();
+  }
+  for (const crate of state.crates) {
+    if (!crate.alive || !crate.supply) continue;
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(mx + crate.x * sx, my + crate.y * sy - 4);
+    ctx.lineTo(mx + crate.x * sx + 4, my + crate.y * sy);
+    ctx.lineTo(mx + crate.x * sx, my + crate.y * sy + 4);
+    ctx.lineTo(mx + crate.x * sx - 4, my + crate.y * sy);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // The helicopter as a white dot with a ring.
+  if (state.heli) {
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(mx + state.heli.x * sx, my + state.heli.y * sy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(mx + state.heli.x * sx, my + state.heli.y * sy, 6, 0, Math.PI * 2);
+    ctx.stroke();
   }
   // Bots as orange dots, player as a cyan dot with a ring.
   for (const b of state.bots) {
@@ -465,13 +594,13 @@ export function drawTitle(ctx, state, best) {
   centreText(ctx, '12 drop in. One walks out.', 640, 268, '700 19px ' + FONT, PALETTE.gold);
   panel(ctx, 380, 300, 520, 282);
   const rows = [
-    ['WASD / arrows', 'move'],
+    ['WASD / arrows', 'move · drive (in a vehicle)'],
     ['Mouse', 'aim — hold click to fire'],
-    ['E', 'pick up weapon'],
+    ['E', 'pick up weapon · mount vehicle'],
     ['Q', 'smoke bomb (blocks sight)'],
     ['R', 'reload'],
     ['1 / 2', 'switch weapon'],
-    ['SHIFT', 'sprint (stamina)'],
+    ['SHIFT', 'sprint · boost (in a vehicle)'],
     ['P / ESC', 'pause    ·    M mute'],
   ];
   ctx.save();
@@ -486,7 +615,7 @@ export function drawTitle(ctx, state, best) {
     ctx.fillText(row[1], 580, y);
   });
   ctx.restore();
-  centreText(ctx, 'Loot weapons. Outrun the storm. Be the last one standing.', 640, 596, '500 18px ' + FONT, PALETTE.text);
+  centreText(ctx, 'Loot weapons. Drive cars and bikes. Watch the sky for supply drops.', 640, 596, '500 18px ' + FONT, PALETTE.text);
   centreText(ctx, 'CLICK  or  press  SPACE  to drop in', 640, 646, '800 24px ' + FONT, PALETTE.gold);
   if (best > 0) centreText(ctx, 'Best placement: #' + best, 640, 690, '700 15px ' + FONT, PALETTE.muted);
   ctx.restore();
