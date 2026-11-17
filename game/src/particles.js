@@ -37,6 +37,26 @@ export function trail(state, x, y, color) {
   p.drag = 0;
 }
 
+/** A spent shell casing: one brass fleck ejected sideways from the gun, tumbling
+ * to the ground. Small, cheap, and it sells the shot more than any sound does. */
+export function spawnCasing(state, x, y, angle) {
+  const p = state.particles[state.particleCursor];
+  state.particleCursor = (state.particleCursor + 1) % MAX_PARTICLES;
+  const side = state.random() < 0.5 ? 1 : -1;
+  const a = angle + (Math.PI / 2) * side + (state.random() * 2 - 1) * 0.4;
+  const v = 90 + state.random() * 80;
+  p.alive = true;
+  p.x = x + Math.cos(angle) * 10;
+  p.y = y + Math.sin(angle) * 10;
+  p.vx = Math.cos(a) * v;
+  p.vy = Math.sin(a) * v;
+  p.life = 0.55;
+  p.maxLife = 0.55;
+  p.size = 2.2;
+  p.color = '#d4a017';
+  p.drag = 5.5;
+}
+
 export function floatText(state, x, y, text, color) {
   if (state.texts.length > 24) state.texts.shift();
   state.texts.push({ x, y, text, color, life: 0.9, maxLife: 0.9 });
