@@ -68,6 +68,32 @@ export const SMOKE = {
   throwDist: 150,
 };
 
+/** Vehicles: cars are fast, tough and shield their driver; bikes are faster still
+ * but leave the rider fully exposed. All numbers are in world units / seconds. */
+export const VEHICLES = {
+  car: { name: 'Car', speed: 590, boostMult: 1.25, radius: 26, hp: 150, driverCover: 0.5, accel: 900, turn: 3.4 },
+  bike: { name: 'Bike', speed: 730, boostMult: 1.3, radius: 18, hp: 80, driverCover: 0, accel: 1100, turn: 4.6 },
+  count: { car: 2, bike: 2 },
+  mountRadius: 66,
+};
+
+/** Helicopters: one flies across the island every so often and drops a supply crate
+ * (parachute, good loot). Ambient only — they cannot be shot down. */
+export const HELI = {
+  firstIn: 34,
+  nextMin: 45,
+  nextMax: 62,
+  speed: 150,
+  dropAt: 0.5,
+  crateFall: 65,
+};
+
+/** Terrain: sand slows a fighter to 0.9x and kicks up dust; tall grass hides. */
+export const TERRAIN = {
+  sandSlow: 0.9,
+  grassHideRange: 180,
+};
+
 export const CRATE = { radius: 20, hp: 3 };
 
 export { PALETTE };
