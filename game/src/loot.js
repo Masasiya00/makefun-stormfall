@@ -156,7 +156,10 @@ export function takeNearestWeapon(state, fighter) {
   }
   item.alive = false;
   if (fighter.isPlayer) {
-    floatText(state, fighter.x, fighter.y - 26, def.name.toUpperCase() + '!', '#ffd75e');
+    // A compact toast by the weapon slots (drawn in the HUD), NOT a floating banner
+    // over the play area: a big gold "SCATTERGUN!" above the fighter reads as a garbled
+    // banner and covers the action. The toast fades on its own in updateParticles.
+    state.pickupToast = { text: def.name.toUpperCase(), t: 1.6, maxT: 1.6 };
     sfx.pickup();
   }
   return item.id;
