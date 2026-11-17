@@ -18,9 +18,9 @@ node serve.ts   # serves game/ at http://localhost:8080
 
 Open the page, click to drop in, and fight:
 
-- **WASD / arrows** — move. **Mouse** — aim. **Hold click** — fire.
-- **E** — pick up a weapon. **Q** — smoke bomb (blocks sight). **R** — reload.
-- **1 / 2** — switch weapon. **Shift** — sprint (stamina). **P / Esc** — pause.
+- **WASD / arrows** — move (drive when mounted). **Mouse** — aim. **Hold click** — fire.
+- **E** — pick up a weapon · mount / exit a vehicle. **Q** — smoke bomb (blocks sight). **R** — reload.
+- **1 / 2** — switch weapon. **Shift** — sprint (stamina) · boost (in a vehicle). **P / Esc** — pause.
 - **M** — mute.
 
 Four weapons (Pistol, Scattergun, Rifle, Longshot), health + shield, medkits
@@ -32,11 +32,40 @@ LONGSHOT tags, a score (100 per elimination + placement bonus), and a named
 island: Ember Docks, Glass Field, Hollow Hill, Salt Market, Thornwood and The
 Clearing, each shown on the terrain, the minimap and the HUD.
 
+## Realism (v2, all procedural — no assets, no network)
+
+- **Shipping containers** — solid cover at Ember Docks, Salt Market, Glass
+  Field and Hollow Hill (block movement and bullets), in rust red, teal,
+  mustard and brown; shown as grey squares on the minimap.
+- **Drivable cars and motorcycles** — press E near one to mount, WASD to
+  drive (cars ~1.8× run speed, bikes ~2.2×), Shift to boost, E to exit.
+  Cars shield the driver (50% damage); bikes leave the rider fully exposed.
+  Vehicles take damage, explode into smoke and fire, and leave a wreck that
+  stays as cover. Bots shoot at vehicles, and a car can be destroyed in a
+  firefight. Vehicle speed + HP shown on a bottom-centre HUD panel.
+- **Fields and sand** — open fields with mown stripes and tall grass that
+  hides a fighter inside it (bots lose sight beyond 180 px); sand patches
+  that slow movement to 0.9× and kick up footstep dust.
+- **War sounds** — all procedural WebAudio: distant gunfire rumble, explosion
+  booms, a helicopter rotor that fades with distance, footsteps (different on
+  grass and sand), and an engine hum while driving. M mutes everything.
+- **Helicopters and supply drops** — every ~45–60 s a helicopter crosses the
+  island and drops one supply crate by parachute (good weapon + medkit +
+  shield + smoke). "SUPPLY DROP INCOMING" toast, gold crate, gold diamond on
+  the minimap.
+- **Combat feel** — muzzle flash + tracer + shell casings on every shot,
+  damage falloff with range, recoil bloom, a hitmarker (X) and floating damage
+  numbers on hits, and a brief hit-stop freeze on a kill.
+- **Drifting smoke** — smoke clouds now expand, drift with the wind and fade
+  over time, and still block bot line-of-sight.
+
 ## Structure
 
 - `game/src/main.js` — boot, the fixed-step loop, screens, camera.
 - `game/src/state.js` — the whole game state (pools pre-allocated).
-- `game/src/map.js` — the island: terrain, trees, rocks, ruins, crates.
+- `game/src/map.js` — the island: terrain, trees, rocks, ruins, crates, containers, sand, fields, tall grass.
+- `game/src/vehicles.js` — drivable cars and motorcycles (mount, drive, destroy, wreck).
+- `game/src/heli.js` — ambient helicopters and parachute supply drops.
 - `game/src/storm.js` — the shrinking safe zone, five phases.
 - `game/src/player.js` — movement, sprint, drop-in, storm damage.
 - `game/src/bots.js` — the 11 bots: loot, hunt, flee the storm.
