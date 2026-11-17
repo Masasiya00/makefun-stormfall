@@ -139,27 +139,6 @@ function paintTerrain(random, obstacles) {
     g.fill();
   }
   g.globalAlpha = 1;
-  // Named-place labels, baked into the terrain: a small marker and the name, faint
-  // enough to read as map furniture, not UI. Kept small so a fighter or a loot label
-  // standing on the place name stays readable.
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  for (const z of ZONES) {
-    const lx = z.lx ?? z.x;
-    const ly = z.ly ?? z.y;
-    g.globalAlpha = 0.45;
-    g.fillStyle = '#f5f0e1';
-    g.beginPath();
-    g.arc(lx, ly - 20, 3, 0, Math.PI * 2);
-    g.fill();
-    g.globalAlpha = 0.6;
-    g.font = 'bold 18px system-ui, sans-serif';
-    g.fillStyle = 'rgba(20, 40, 26, 0.5)';
-    g.fillText(z.name, lx + 1, ly + 1);
-    g.fillStyle = 'rgba(245, 240, 225, 0.75)';
-    g.fillText(z.name, lx, ly);
-  }
-  g.globalAlpha = 1;
   // Obstacles baked into the terrain image.
   for (const o of obstacles) {
     if (o.kind === 'tree') {
@@ -196,6 +175,27 @@ function paintTerrain(random, obstacles) {
       g.fillRect(o.x, o.y, Math.min(5, o.w), o.h);
     }
   }
+  // Named-place labels, drawn AFTER the obstacles so a tree or rock can never cover
+  // a name (a "The Clearing" half-hidden behind a tree reads as a defect). Baked into
+  // the terrain: a small marker and the name, faint enough to read as map furniture.
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  for (const z of ZONES) {
+    const lx = z.lx ?? z.x;
+    const ly = z.ly ?? z.y;
+    g.globalAlpha = 0.45;
+    g.fillStyle = '#f5f0e1';
+    g.beginPath();
+    g.arc(lx, ly - 20, 3, 0, Math.PI * 2);
+    g.fill();
+    g.globalAlpha = 0.6;
+    g.font = 'bold 18px system-ui, sans-serif';
+    g.fillStyle = 'rgba(20, 40, 26, 0.5)';
+    g.fillText(z.name, lx + 1, ly + 1);
+    g.fillStyle = 'rgba(245, 240, 225, 0.75)';
+    g.fillText(z.name, lx, ly);
+  }
+  g.globalAlpha = 1;
   return c;
 }
 
