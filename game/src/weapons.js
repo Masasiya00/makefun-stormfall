@@ -2,7 +2,7 @@
 // fighter holds two slots; slot 0 starts as a pistol. Ammo is per weapon type; the pistol
 // never runs dry, the rest do. All fire goes through the shared bullet pool.
 import { WEAPONS } from './config.js';
-import { burst } from './particles.js';
+import { burst, spawnCasing, addShake } from './particles.js';
 import { sfx } from './audio.js';
 
 export function weaponDef(id) {
@@ -98,8 +98,12 @@ export function tryFire(state, fighter, angle) {
   fighter['mag_' + id] = mag - 1;
   fighter.fireTimer = 1 / def.fireRate;
   const pellets = def.pellets || 1;
+  // Aim bloom: rapid fire widens the spread, so holding the trigger is a choice,
+  // not a free laser. Bloom decays in the fighter's step (player.js / bots.js).
+  const spread = def.spread * (1 + (fighter.bloom || 0));
+  fighter.bloom = Math.min(1.2, (fighter.bloom || 0) + (def.auto ? 0.09 : 0.16));
   for (let i = 0; i < pellets; i += 1) {
-    const a = angle + (state.random() * 2 - 1) * def.spread;
+    const a = angle + (state.random() * 2 - 1) * spread;
     const b = spawnBullet(state, fighter);
     if (!b) break;
     const mx = fighter.x + Math.cos(angle) * (fighter.radius + 6);
@@ -116,12 +120,23 @@ export function tryFire(state, fighter, angle) {
     b.fromPlayer = fighter.isPlayer;
     b.color = def.color;
     b.alive = true;
+    b.px = mx;
+    b.py = my;
   }
-  // Recoil kick, muzzle flash, sound.
+  // Recoil kick, muzzle flash, shell casing, sound. The flash is a short-lived
+  // pre-rendered glow at the muzzle (no shadowBlur in the hot loop); the casing
+  // ejects sideways and bounces off the ground.
   fighter.vx -= Math.cos(angle) * def.kick * 0.12;
   fighter.vy -= Math.sin(angle) * def.kick * 0.12;
-  burst(state, fighter.x + Math.cos(angle) * (fighter.radius + 8), fighter.y + Math.sin(angle) * (fighter.radius + 8), def.color, 3, 120, 0.14, 3);
-  if (fighter.isPlayer) sfx.shoot(id);
+  const mx = fighter.x + Math.cos(angle) * (fighter.radius + 8);
+  const my = fighter.y + Math.sin(angle) * (fighter.radius + 8);
+  burst(state, mx, my, def.color, 3, 120, 0.14, 3);
+  burst(state, mx, my, '#ffffff', 1, 60, 0.06, 13);
+  spawnCasing(state, fighter.x, fighter.y, angle);
+  if (fighter.isPlayer) {
+    addShake(state, 1.6);
+    sfx.shoot(id);
+  }
   return true;
 }
 
