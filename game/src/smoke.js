@@ -15,7 +15,12 @@ export function throwSmoke(state, fighter) {
   state.smokes.push({
     x: Math.max(60, Math.min(1540, x)),
     y: Math.max(60, Math.min(1140, y)),
-    r: SMOKE.radius,
+    // The cloud blooms from a tight puff to full size, drifts with the wind, and
+    // thins out as it dies — a living screen, not a painted circle.
+    r: SMOKE.radius * 0.55,
+    rMax: SMOKE.radius * 1.35,
+    vx: state.wind.x,
+    vy: state.wind.y,
     life: SMOKE.life,
     maxLife: SMOKE.life,
     seed: state.random(),
@@ -28,11 +33,20 @@ export function throwSmoke(state, fighter) {
   return true;
 }
 
-/** Age the clouds; dead ones leave the list. */
+/** Age the clouds: they drift with the wind, expand, and fade. Dead ones leave the list. */
 export function updateSmoke(state, dt) {
   for (let i = state.smokes.length - 1; i >= 0; i -= 1) {
-    state.smokes[i].life -= dt;
-    if (state.smokes[i].life <= 0) state.smokes.splice(i, 1);
+    const c = state.smokes[i];
+    c.life -= dt;
+    if (c.life <= 0) {
+      state.smokes.splice(i, 1);
+      continue;
+    }
+    c.x += c.vx * dt;
+    c.y += c.vy * dt;
+    // Bloom: grow toward full size over the first two seconds, then hold.
+    const grow = Math.min(1, (c.maxLife - c.life) / 2);
+    c.r = SMOKE.radius * 0.55 + (c.rMax - SMOKE.radius * 0.55) * grow;
   }
 }
 
@@ -57,14 +71,20 @@ export function drawSmoke(ctx, state) {
   const sprite = glowSprite('#9ca3af', SMOKE.radius);
   ctx.save();
   for (const c of state.smokes) {
-    const a = Math.min(0.62, (c.life / c.maxLife) * 0.7);
-    ctx.globalAlpha = a;
-    // Two offset blobs per cloud so it reads as smoke, not a flat disc.
-    const ox = Math.cos(c.seed * 6.28) * 22;
-    const oy = Math.sin(c.seed * 6.28) * 18;
-    const s = sprite.half * 2;
+    // Fade out over the last two seconds of life; full strength while blooming.
+    const a = Math.min(0.62, (c.life / c.maxLife) * 0.7, Math.min(1, c.life / 2) * 0.62);
+    ctx.globalAlpha = Math.max(0, a);
+    // Three offset blobs per cloud, scaled to the cloud's current radius, so it
+    // reads as drifting smoke, not a flat disc.
+    const scale = c.r / SMOKE.radius;
+    const ox = Math.cos(c.seed * 6.28) * 22 * scale;
+    const oy = Math.sin(c.seed * 6.28) * 18 * scale;
+    const ox2 = Math.cos(c.seed * 12.5) * 30 * scale;
+    const oy2 = Math.sin(c.seed * 12.5) * 24 * scale;
+    const s = sprite.half * 2 * scale;
     ctx.drawImage(sprite.canvas, c.x - ox - s / 2, c.y - oy - s / 2, s, s);
     ctx.drawImage(sprite.canvas, c.x + ox - s / 2, c.y + oy - s / 2, s * 0.85, s * 0.85);
+    ctx.drawImage(sprite.canvas, c.x + ox2 - s / 2, c.y + oy2 - s / 2, s * 0.7, s * 0.7);
   }
   ctx.restore();
 }
