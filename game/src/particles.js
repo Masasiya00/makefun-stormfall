@@ -70,6 +70,11 @@ export function updateParticles(state, dt) {
     state.feed[i].t += dt;
     if (state.feed[i].t > (state.feed[i].ttl || 6)) state.feed.splice(i, 1);
   }
+  // The weapon-pickup toast (HUD, bottom-left) fades on its own.
+  if (state.pickupToast) {
+    state.pickupToast.t -= dt;
+    if (state.pickupToast.t <= 0) state.pickupToast = null;
+  }
   state.shakeMag = Math.max(0, state.shakeMag - 34 * dt);
   if (state.shakeMag > 0) {
     state.shakeX = (state.random() * 2 - 1) * state.shakeMag;
@@ -95,8 +100,14 @@ export function drawParticles(ctx, state) {
   ctx.save();
   ctx.textAlign = 'center';
   ctx.font = '700 15px system-ui, sans-serif';
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
   for (const t of state.texts) {
     ctx.globalAlpha = Math.max(0, t.life / t.maxLife);
+    // A dark outline keeps the text readable over any terrain and stops bold gold
+    // text from bleeding into a garbled banner against bright grass.
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(t.text, t.x, t.y);
     ctx.fillStyle = t.color;
     ctx.fillText(t.text, t.x, t.y);
   }
