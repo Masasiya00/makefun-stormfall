@@ -1,7 +1,7 @@
 // The whole game state in one factory, so the loop (main.js) and the screenshot stager
 // (shots.js) build exactly the same world. Pools are pre-allocated here: bullets and
 // particles are reused, never allocated per frame, which keeps the frame rate steady.
-import { WORLD, PLAYER } from './config.js';
+import { WORLD, PLAYER, HELI } from './config.js';
 import { createIsland } from './map.js';
 import { createStorm } from './storm.js';
 
@@ -12,7 +12,7 @@ function makeParticle() {
   return { alive: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1, size: 2, color: '#ffffff', drag: 0 };
 }
 function makeBullet() {
-  return { alive: false, x: 0, y: 0, vx: 0, vy: 0, radius: 4, damage: 0, range: 0, traveled: 0, owner: null, color: '#ffe9a8', fromPlayer: false };
+  return { alive: false, x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0, radius: 4, damage: 0, range: 0, traveled: 0, owner: null, color: '#ffe9a8', fromPlayer: false };
 }
 
 export function createFighter(name, color, x, y, isPlayer) {
@@ -53,6 +53,11 @@ export function createFighter(name, color, x, y, isPlayer) {
     smoke: 0,
     smokeCooldown: 0,
     calloutTimer: 0,
+    // Combat feel: aim bloom grows with fire and decays; stepTimer paces footsteps.
+    bloom: 0,
+    stepTimer: 0,
+    // The vehicle this fighter is driving (null on foot).
+    vehicle: null,
     // Bot brains only.
     brain: null,
     thinkTimer: 0,
@@ -98,6 +103,19 @@ export function createState(random) {
     flashColor: '#ffffff',
     banner: null,
     pickupToast: null,
+    // Vehicles, helicopters and supply drops (see vehicles.js / heli.js).
+    vehicles: [],
+    heli: null,
+    heliTimer: HELI.firstIn,
+    drops: [],
+    supplyToast: null,
+    // A light wind that drifts smoke clouds (seeded, fixed for the match).
+    wind: { x: (random() * 2 - 1) * 14, y: (random() * 2 - 1) * 14 },
+    // Combat feel: hit-stop freezes the sim for a beat on a kill; hitmark is the
+    // crosshair X shown briefly when the player's shot lands.
+    hitStop: 0,
+    hitmark: null,
+    ambientTimer: 2.5,
     stormWarned: 0,
     camera: { x: WORLD.width / 2, y: WORLD.height / 2 },
     titleDrift: 0,
