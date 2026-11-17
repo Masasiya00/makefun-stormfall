@@ -2,14 +2,15 @@
 // drop-in glide at the start, weapon switching (1/2), reload (R), pickup (E), and storm
 // damage over time. One-shot presses arrive as ACTION_* flags, accumulated by the loop
 // until a step consumes them, so a press between steps is never lost.
-import { WORLD, PLAYER } from './config.js';
-import { moveFighter } from './map.js';
+import { WORLD, PLAYER, TERRAIN } from './config.js';
+import { moveFighter, terrainAt } from './map.js';
 import { outsideStorm } from './storm.js';
 import { currentWeapon, currentWeaponId, startReload, finishReload, tryFire } from './weapons.js';
 import { takeNearestWeapon } from './loot.js';
 import { throwSmoke } from './smoke.js';
 import { damageFighter } from './bullets.js';
-import { floatText } from './particles.js';
+import { driveVehicle, toggleVehicle, collideVehicles } from './vehicles.js';
+import { floatText, burst } from './particles.js';
 import { sfx } from './audio.js';
 import { ACTION_RELOAD, ACTION_PICKUP, ACTION_SLOT1, ACTION_SLOT2, ACTION_SMOKE } from './input.js';
 
@@ -39,6 +40,8 @@ export function updatePlayer(state, dt, input, actions) {
   p.hurtFlash = Math.max(0, p.hurtFlash - dt);
   p.invuln = Math.max(0, p.invuln - dt);
   p.fireTimer = Math.max(0, p.fireTimer - dt);
+  // Aim bloom decays when not firing (a burst, then a pause, is accurate again).
+  p.bloom = Math.max(0, (p.bloom || 0) - dt * 1.6);
 
   // Drop-in: glide toward the landing spot, no control, no fire.
   if (p.dropping) {
@@ -58,6 +61,45 @@ export function updatePlayer(state, dt, input, actions) {
   const aim = input.aimWorld(state.camera);
   p.angle = Math.atan2(aim.y - p.y, aim.x - p.x);
 
+  // Driving: the vehicle steers instead of the legs. E gets out; firing still works
+  // from the driver's seat (a drive-by is fair game — the driver is exposed).
+  if (p.vehicle) {
+    if (actions & ACTION_PICKUP) toggleVehicle(state, p);
+    if (p.vehicle) {
+      driveVehicle(state, p, dt, input);
+      if (actions & ACTION_SMOKE) throwSmoke(state, p);
+      // Fire from the driver's seat.
+      const def = currentWeapon(p);
+      if (def) {
+        const wantFire = def.auto ? input.isFiring() : input.consumeFireEdge();
+        if (wantFire) {
+          if (tryFire(state, p, p.angle)) {
+            // Fired.
+          } else if (p['mag_' + currentWeaponId(p)] <= 0 && !p.reloading) {
+            startReload(p);
+          }
+        }
+      }
+      if (p.reloading) {
+        p.reloadTimer -= dt;
+        if (p.reloadTimer <= 0) {
+          p.reloading = false;
+          finishReload(p);
+          sfx.reload();
+        }
+      }
+    }
+    // Storm damage over time outside the safe zone (drivers are not exempt).
+    if (outsideStorm(state, p.x, p.y) && state.storm.dps > 0) {
+      const before = p.hp + p.shield;
+      damageFighter(state, p, state.storm.dps * dt, null);
+      if (Math.floor(before) !== Math.floor(p.hp + p.shield) && p.alive) {
+        sfx.stormHit();
+      }
+    }
+    return;
+  }
+
   // Move: acceleration toward the held direction, friction when idle. Shift sprints.
   const move = input.move();
   const wantSprint = input.isSprinting() && (move.x !== 0 || move.y !== 0) && p.stamina > 1;
@@ -67,7 +109,10 @@ export function updatePlayer(state, dt, input, actions) {
   } else {
     p.stamina = Math.min(PLAYER.staminaMax, p.stamina + PLAYER.sprintRegen * dt);
   }
-  const speed = PLAYER.maxSpeed * (wantSprint ? PLAYER.sprintMult : 1);
+  // Sand slows a fighter down; tall grass does not, it hides instead.
+  const ground = terrainAt(state.island, p.x, p.y);
+  const groundMult = ground === 'sand' ? TERRAIN.sandSlow : 1;
+  const speed = PLAYER.maxSpeed * (wantSprint ? PLAYER.sprintMult : 1) * groundMult;
   p.vx += move.x * PLAYER.accel * dt;
   p.vy += move.y * PLAYER.accel * dt;
   const damp = Math.max(0, 1 - PLAYER.friction * dt);
@@ -79,12 +124,28 @@ export function updatePlayer(state, dt, input, actions) {
     p.vy = (p.vy / v) * speed;
   }
   moveFighter(state.island, p, p.vx * dt, p.vy * dt);
+  collideVehicles(state, p);
   p.x = Math.max(60, Math.min(WORLD.width - 60, p.x));
   p.y = Math.max(60, Math.min(WORLD.height - 60, p.y));
 
-  // One-shot actions.
+  // Footsteps: a soft thud and a dust puff on sand, paced by speed.
+  if (v > 60) {
+    p.stepTimer -= dt * (v / PLAYER.maxSpeed);
+    if (p.stepTimer <= 0) {
+      p.stepTimer = 0.34;
+      sfx.step(ground);
+      if (ground === 'sand') {
+        burst(state, p.x, p.y + 10, '#c9a86a', 1, 30, 0.45, 3);
+      }
+    }
+  }
+
+  // One-shot actions. E mounts a nearby vehicle first (a car is worth more than
+  // the rifle lying under it); otherwise it picks up the nearest weapon.
   if (actions & ACTION_RELOAD) startReload(p);
-  if (actions & ACTION_PICKUP) takeNearestWeapon(state, p);
+  if (actions & ACTION_PICKUP) {
+    if (!toggleVehicle(state, p)) takeNearestWeapon(state, p);
+  }
   if (actions & ACTION_SMOKE) throwSmoke(state, p);
   if (actions & ACTION_SLOT1 && p.slots[0]) {
     p.slot = 0;
