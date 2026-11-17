@@ -7,6 +7,7 @@ import { WORLD, STEP, WEAPONS } from './config.js';
 import { ACTION_PICKUP, ACTION_RELOAD, ACTION_SMOKE } from './input.js';
 import { currentWeapon, currentWeaponId } from './weapons.js';
 import { spawnLoot, nearestWeapon } from './loot.js';
+import { nearestVehicle, spawnVehicles } from './vehicles.js';
 import { spawnBots } from './bots.js';
 import { startDrop } from './player.js';
 import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './hud.js';
@@ -37,9 +38,10 @@ const STORM_SECONDS = 58;
  * takes, up to this cap. No gearing, no teleporting, no posing. */
 const END_SECONDS = 300;
 
-/** Drop the player and bots into a fresh match (loot, bots, drop-in). */
+/** Drop the player and bots into a fresh match (loot, vehicles, bots, drop-in). */
 function beginMatch(state) {
   spawnLoot(state);
+  spawnVehicles(state);
   const r = state.random;
   const tx = WORLD.width / 2 + (r() * 2 - 1) * 260;
   const ty = WORLD.height / 2 + (r() * 2 - 1) * 200;
@@ -203,8 +205,19 @@ function autopilot(state, input, aggressive) {
     input.setAimWorld(gx, gy);
   }
   input.setFiring(wantFire);
-  // Pick up a weapon underfoot; reload when the magazine is dry.
-  const near = nearestWeapon(state, p, 56);
+  // A vehicle on the way is worth mounting: drive it toward the goal instead of
+  // walking. (This is a real play choice, not staging — the pilot only takes a car
+  // it actually passes.) Once mounted, the same move vector steers the vehicle.
+  if (!p.vehicle) {
+    const veh = nearestVehicle(state, p, 200);
+    if (veh) {
+      input.setMove(veh.x - p.x, veh.y - p.y);
+      if (Math.hypot(veh.x - p.x, veh.y - p.y) < 66) input.queueAction(ACTION_PICKUP);
+    }
+  }
+  // Pick up a weapon underfoot; reload when the magazine is dry. (While mounted,
+  // E is the exit key, so the pilot never queues a pickup from the driver's seat.)
+  const near = !p.vehicle ? nearestWeapon(state, p, 56) : null;
   if (near) input.queueAction(ACTION_PICKUP);
   const mag = def ? p['mag_' + currentWeaponId(p)] ?? WEAPONS[currentWeaponId(p)].mag : 0;
   if (def && mag <= 0 && !p.reloading) input.queueAction(ACTION_RELOAD);
@@ -245,6 +258,7 @@ export function stageShot(name, state, input, step) {
   // Title: an attract mode — bots loot and skirmish across a living island behind the panel.
   state.screen = SCREEN_TITLE;
   spawnLoot(state);
+  spawnVehicles(state);
   spawnBots(state);
   state.player.invuln = 999;
   for (let i = 0; i < START_SECONDS / STEP; i += 1) step(0);
