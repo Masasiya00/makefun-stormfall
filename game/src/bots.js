@@ -4,14 +4,16 @@
 // own and the kill feed tells a real story. Bots also talk: tactical callouts (loot,
 // contact, storm rotation) go to the radio feed, named and placed, so the match reads
 // like a squad game, not a silent arena.
-import { WORLD, PLAYER, BOT_NAMES, BOT_COLORS, WEAPONS } from './config.js';
+import { WORLD, PLAYER, BOT_NAMES, BOT_COLORS, WEAPONS, TERRAIN } from './config.js';
 import { createFighter } from './state.js';
-import { moveFighter, zoneAt } from './map.js';
+import { moveFighter, zoneAt, terrainAt, inGrass } from './map.js';
 import { outsideStorm } from './storm.js';
 import { currentWeapon, currentWeaponId, startReload, finishReload, tryFire } from './weapons.js';
 import { nearestWeapon, takeNearestWeapon } from './loot.js';
 import { damageFighter, pushRadio } from './bullets.js';
 import { throwSmoke, smokeBlocks } from './smoke.js';
+import { collideVehicles } from './vehicles.js';
+import { burst } from './particles.js';
 import { drawFighterBody } from './player.js';
 import { range } from './random.js';
 
@@ -48,7 +50,8 @@ export function spawnBots(state, avoidX, avoidY) {
 }
 
 /** Nearest living enemy of a fighter (the player counts as an enemy for bots).
- * Smoke breaks line of sight: a target behind a cloud is not a target at all. */
+ * Smoke breaks line of sight: a target behind a cloud is not a target at all.
+ * Tall grass hides too: a fighter standing in a field is only spotted up close. */
 function nearestEnemy(state, me) {
   let best = null;
   let bestD = Infinity;
@@ -57,6 +60,7 @@ function nearestEnemy(state, me) {
     if (!t.alive || t === me || t.dropping) continue;
     if (smokeBlocks(state, me.x, me.y, t.x, t.y)) continue;
     const d = Math.hypot(t.x - me.x, t.y - me.y);
+    if (inGrass(state.island, t.x, t.y) && d > TERRAIN.grassHideRange) continue;
     if (d < bestD) {
       bestD = d;
       best = t;
@@ -88,6 +92,7 @@ export function updateBots(state, dt) {
     bot.fireTimer = Math.max(0, bot.fireTimer - dt);
     bot.calloutTimer = Math.max(0, bot.calloutTimer - dt);
     bot.smokeCooldown = Math.max(0, bot.smokeCooldown - dt);
+    bot.bloom = Math.max(0, (bot.bloom || 0) - dt * 1.6);
 
     // Drop-in glide.
     if (bot.dropping) {
@@ -150,7 +155,9 @@ export function updateBots(state, dt) {
     const dx = gx - bot.x;
     const dy = gy - bot.y;
     const d = Math.hypot(dx, dy);
-    const speed = PLAYER.maxSpeed * 0.86;
+    // Sand slows bots exactly like it slows the player.
+    const groundMult = terrainAt(state.island, bot.x, bot.y) === 'sand' ? TERRAIN.sandSlow : 1;
+    const speed = PLAYER.maxSpeed * 0.86 * groundMult;
     if (d > 8) {
       bot.vx += (dx / d) * PLAYER.accel * 0.8 * dt;
       bot.vy += (dy / d) * PLAYER.accel * 0.8 * dt;
@@ -164,8 +171,18 @@ export function updateBots(state, dt) {
       bot.vy = (bot.vy / v) * speed;
     }
     moveFighter(state.island, bot, bot.vx * dt, bot.vy * dt);
+    collideVehicles(state, bot);
     bot.x = Math.max(60, Math.min(WORLD.width - 60, bot.x));
     bot.y = Math.max(60, Math.min(WORLD.height - 60, bot.y));
+
+    // Dust on sand, paced by speed (bots are quieter than the player: no sound).
+    if (v > 60 && terrainAt(state.island, bot.x, bot.y) === 'sand') {
+      bot.stepTimer -= dt * (v / PLAYER.maxSpeed);
+      if (bot.stepTimer <= 0) {
+        bot.stepTimer = 0.4;
+        burst(state, bot.x, bot.y + 10, '#c9a86a', 1, 25, 0.4, 3);
+      }
+    }
 
     // Aim: at the hunted enemy, else along the move direction.
     if (bot.brain === 'hunt' && bot.target && bot.target.alive) {
