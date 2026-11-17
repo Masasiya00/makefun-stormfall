@@ -209,10 +209,14 @@ export function drawFighterBody(ctx, f, time) {
     ctx.fillStyle = '#60a5fa';
     ctx.fillRect(-w / 2, -f.radius - 19, w * (f.shield / PLAYER.shieldMax), 3);
   }
-  // Name.
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  // Name (dark outline first, so it never bleeds into a bright label or the HUD).
   ctx.font = '700 11px system-ui, sans-serif';
   ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.strokeText(f.name, 0, -f.radius - 24);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.fillText(f.name, 0, -f.radius - 24);
   ctx.restore();
 }
