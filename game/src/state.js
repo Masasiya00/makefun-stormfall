@@ -97,6 +97,7 @@ export function createState(random) {
     flash: 0,
     flashColor: '#ffffff',
     banner: null,
+    pickupToast: null,
     stormWarned: 0,
     camera: { x: WORLD.width / 2, y: WORLD.height / 2 },
     titleDrift: 0,
