@@ -5,11 +5,23 @@ import { PLAYER } from './config.js';
 import { segmentBlocked } from './map.js';
 import { burst, floatText, addShake } from './particles.js';
 import { dropLoot, breakCrate } from './loot.js';
+import { bulletHitsVehicle, damageVehicle } from './vehicles.js';
 import { sfx } from './audio.js';
+
+/** Damage falloff: full damage inside 30% of the weapon's range, fading to half
+ * at 90% of range. A longshot keeps its punch far out; a scattergun does not. */
+export function falloff(damage, traveled, range) {
+  if (traveled < range * 0.3) return damage;
+  if (traveled >= range * 0.9) return damage * 0.5;
+  const t = (traveled - range * 0.3) / (range * 0.6);
+  return damage * (1 - 0.5 * t);
+}
 
 export function updateBullets(state, dt) {
   for (const b of state.bullets) {
     if (!b.alive) continue;
+    b.px = b.x;
+    b.py = b.y;
     const nx = b.x + b.vx * dt;
     const ny = b.y + b.vy * dt;
     b.traveled += Math.hypot(b.vx * dt, b.vy * dt);
@@ -24,6 +36,13 @@ export function updateBullets(state, dt) {
     }
     b.x = nx;
     b.y = ny;
+    // Vehicles stop bullets too (and their drivers take a share of the hit).
+    const vehicle = bulletHitsVehicle(state, b.px, b.py, b.x, b.y);
+    if (vehicle) {
+      damageVehicle(state, vehicle, falloff(b.damage, b.traveled, b.range), b.owner);
+      b.alive = false;
+      continue;
+    }
     // Crates stop bullets too.
     let stopped = false;
     for (const crate of state.crates) {
@@ -46,8 +65,13 @@ export function updateBullets(state, dt) {
     for (const f of targets) {
       if (!f.alive || f === b.owner || f.dropping || f.invuln > 0) continue;
       if (Math.hypot(b.x - f.x, b.y - f.y) > f.radius + b.radius) continue;
-      damageFighter(state, f, b.damage, b.owner);
+      const dealt = damageFighter(state, f, falloff(b.damage, b.traveled, b.range), b.owner);
       burst(state, b.x, b.y, f.isPlayer ? '#4de8ff' : '#ff5d73', 6, 160, 0.3, 3);
+      // The player's hit, confirmed: a crosshair hitmarker plus the damage number.
+      if (b.fromPlayer) {
+        state.hitmark = { x: b.x, y: b.y, t: 0.22, maxT: 0.22 };
+        if (dealt > 0) floatText(state, f.x, f.y - 30, '-' + Math.round(dealt), '#ffd75e');
+      }
       b.alive = false;
       break;
     }
@@ -58,12 +82,14 @@ export function updateBullets(state, dt) {
  * Bots are tuned for the human: a bot's shot lands softer (x0.6 on the player, x0.45
  * on another bot), so a fight the player walks into is winnable instead of a laser
  * show, and the bots do not slaughter each other in the first minute — the match
- * should last past the storm's middle phases. */
+ * should last past the storm's middle phases. Returns the damage actually dealt
+ * (after the bot scaling), so the hit feedback can show an honest number. */
 export function damageFighter(state, fighter, amount, from) {
-  if (!fighter.alive) return;
+  if (!fighter.alive) return 0;
   if (from && !from.isPlayer) {
     amount *= fighter.isPlayer ? 0.6 : 0.45;
   }
+  const dealt = amount;
   let left = amount;
   if (fighter.shield > 0) {
     const absorbed = Math.min(fighter.shield, left);
@@ -85,6 +111,7 @@ export function damageFighter(state, fighter, amount, from) {
     fighter.alive = false;
     eliminateFighter(state, fighter, from);
   }
+  return dealt;
 }
 
 /** A fighter goes down: feed, placement, loot drop, particles, and (for the player) the end. */
@@ -110,6 +137,8 @@ export function eliminateFighter(state, fighter, from) {
   if (killer && killer.isPlayer) {
     floatText(state, fighter.x, fighter.y - 30, 'ELIMINATED', '#ffd75e');
     sfx.elim();
+    // Hit-stop: the sim freezes for a beat on the kill, so it lands heavy.
+    state.hitStop = 0.045;
   }
   dropLoot(state, fighter);
   state.alive = 1 + state.bots.filter((b) => b.alive).length;
