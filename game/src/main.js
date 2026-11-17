@@ -17,6 +17,8 @@ import { updateBullets, pushRadio } from './bullets.js';
 import { spawnLoot, updateLoot } from './loot.js';
 import { updateSmoke } from './smoke.js';
 import { updateStorm } from './storm.js';
+import { spawnVehicles } from './vehicles.js';
+import { updateHeli, updateDrops } from './heli.js';
 import { zoneAt, separateFighters } from './map.js';
 import { updateParticles } from './particles.js';
 import { unlockAudio, setMuted, isMuted, sfx } from './audio.js';
@@ -149,6 +151,16 @@ function endGame(won) {
 function stepWorld(actions) {
   state.time += STEP;
   state.flash = Math.max(0, state.flash - STEP * 1.8);
+  // Hit-stop: the sim freezes for a beat after a kill, so it lands heavy. The timer
+  // still ticks (the freeze is short), and rendering never stops.
+  if (state.hitStop > 0) {
+    state.hitStop -= STEP;
+    return;
+  }
+  if (state.hitmark) {
+    state.hitmark.t -= STEP;
+    if (state.hitmark.t <= 0) state.hitmark = null;
+  }
   if (state.banner) {
     state.banner.t -= STEP;
     if (state.banner.t <= 0) state.banner = null;
@@ -161,6 +173,8 @@ function stepWorld(actions) {
     updateBullets(state, STEP);
     updateLoot(state, STEP);
     updateSmoke(state, STEP);
+    updateHeli(state, STEP);
+    updateDrops(state, STEP);
     updateParticles(state, STEP);
     return;
   }
@@ -171,6 +185,15 @@ function stepWorld(actions) {
   updateBullets(state, STEP);
   updateLoot(state, STEP);
   updateSmoke(state, STEP);
+  updateHeli(state, STEP);
+  updateDrops(state, STEP);
+  // Distant war: every few seconds a muffled shot from far away, so the island
+  // sounds like a battle even when nobody is near the player.
+  state.ambientTimer -= STEP;
+  if (state.ambientTimer <= 0) {
+    state.ambientTimer = 2 + state.random() * 3;
+    sfx.distantShot();
+  }
   const stormEvent = updateStorm(state, STEP);
   if (stormEvent === 'shrink-start') {
     state.banner = { text: 'THE STORM IS CLOSING', t: 2.2, color: '#ff4d5e' };
@@ -217,6 +240,16 @@ function snapshot() {
     botsAlive: state.bots.filter((b) => b.alive).length,
     time: Math.round(state.time * 100) / 100,
     muted: isMuted(),
+    // Vehicles, helicopters and drops, for automated playtests.
+    vehicles: state.vehicles.map((v) => ({ kind: v.kind, x: Math.round(v.x), y: Math.round(v.y), hp: Math.round(v.hp), alive: v.alive, driver: !!v.driver })),
+    playerVehicle: state.player.vehicle ? state.player.vehicle.kind : null,
+    heli: state.heli ? { x: Math.round(state.heli.x), y: Math.round(state.heli.y), dropped: state.heli.dropped } : null,
+    heliTimer: Math.round(state.heliTimer * 10) / 10,
+    drops: state.drops.length,
+    crates: state.crates.filter((c) => c.alive).length,
+    supplyCrates: state.crates.filter((c) => c.alive && c.supply).length,
+    smokes: state.smokes.length,
+    smokeClouds: state.smokes.map((c) => ({ x: Math.round(c.x), y: Math.round(c.y), r: Math.round(c.r) })),
   };
 }
 window.__stormfall = { snapshot };
@@ -254,6 +287,7 @@ function runGame() {
   state.best = readBest();
   // A living island behind the title: loot on the ground, bots already skirmishing.
   spawnLoot(state);
+  spawnVehicles(state);
   spawnBots(state);
   let accumulator = 0;
   let last = performance.now();
@@ -269,6 +303,7 @@ function runGame() {
     Object.assign(state, fresh);
     state.best = keepBest;
     spawnLoot(state);
+    spawnVehicles(state);
     const r = state.random;
     const tx = WORLD.width / 2 + (r() * 2 - 1) * 260;
     const ty = WORLD.height / 2 + (r() * 2 - 1) * 200;
