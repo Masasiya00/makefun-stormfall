@@ -407,21 +407,27 @@ export function drawHUD(ctx, state) {
     ctx.fillStyle = PALETTE.muted;
     ctx.fillText((i + 1) + '  ' + (id ? WEAPONS[id].name.toUpperCase() : 'EMPTY'), x + 10, y + 18);
     if (id) {
-      const mag = p['mag_' + id] ?? WEAPONS[id].mag;
-      ctx.font = '800 20px ' + FONT_MONO;
-      ctx.fillStyle = PALETTE.text;
-      const reserve = WEAPONS[id].reserve === Infinity ? '∞' : String(p.ammo[id] || 0);
-      ctx.fillText(mag + ' / ' + reserve, x + 10, y + 44);
       if (p.reloading && active) {
-        ctx.font = '700 11px ' + FONT;
+        // While reloading the slot shows RELOADING… INSTEAD of the ammo count —
+        // never on top of it. The ammo number is meaningless mid-reload anyway.
+        ctx.font = '800 14px ' + FONT_MONO;
         ctx.fillStyle = PALETTE.gold;
-        ctx.fillText('RELOADING…', x + 78, y + 44);
+        ctx.fillText('RELOADING…', x + 10, y + 44);
+      } else {
+        const mag = p['mag_' + id] ?? WEAPONS[id].mag;
+        ctx.font = '800 20px ' + FONT_MONO;
+        ctx.fillStyle = PALETTE.text;
+        const reserve = WEAPONS[id].reserve === Infinity ? '∞' : String(p.ammo[id] || 0);
+        ctx.fillText(mag + ' / ' + reserve, x + 10, y + 44);
       }
     }
   }
   ctx.font = '700 12px ' + FONT;
   ctx.fillStyle = PALETTE.muted;
-  ctx.fillText('KILLS  ' + state.kills + '   ·   SMOKE  ×' + p.smoke + '   ·   SCORE  ' + (state.kills * 100), 20, 664);
+  // Baseline 646: the glyphs end ~10px above the pickup-toast pill's top edge
+  // (656), so the toast can never touch the KILLS line. (The old 664 sat inside
+  // the pill and read as text-on-text.)
+  ctx.fillText('KILLS  ' + state.kills + '   ·   SMOKE  ×' + p.smoke + '   ·   SCORE  ' + (state.kills * 100), 20, 646);
   ctx.restore();
 
   // Vehicle panel (bottom-centre, its own opaque panel): type, speed, vehicle HP,
