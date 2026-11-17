@@ -67,10 +67,20 @@ export function dropLoot(state, fighter) {
   }
 }
 
-/** Break a crate open: it spills a weapon and a consumable. */
+/** Break a crate open: it spills a weapon and a consumable. A supply crate (dropped
+ * by a helicopter) spills a longshot plus a medkit, a shield cell and a smoke bomb. */
 export function breakCrate(state, crate) {
   crate.alive = false;
   const r = state.random;
+  if (crate.supply) {
+    state.loot.push({ kind: 'weapon', id: 'longshot', x: crate.x - 30, y: crate.y, alive: true, bob: 0 });
+    state.loot.push({ kind: 'medkit', id: 'medkit', x: crate.x + 28, y: crate.y - 12, alive: true, bob: 0 });
+    state.loot.push({ kind: 'shield', id: 'shield', x: crate.x + 28, y: crate.y + 14, alive: true, bob: 0 });
+    state.loot.push({ kind: 'smoke', id: 'smoke', x: crate.x, y: crate.y + 28, alive: true, bob: 0 });
+    burst(state, crate.x, crate.y, '#f59e0b', 18, 240, 0.6, 4);
+    floatText(state, crate.x, crate.y - 24, 'SUPPLY!', '#f59e0b');
+    return;
+  }
   const id = r() < 0.5 ? 'rifle' : r() < 0.8 ? 'scattergun' : 'longshot';
   state.loot.push({ kind: 'weapon', id, x: crate.x - 26, y: crate.y, alive: true, bob: 0 });
   const kind = r() < 0.5 ? 'medkit' : 'shield';
